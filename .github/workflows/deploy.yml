@@ -1,0 +1,86 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # 手動実行も可能
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScriptチェック
+        run: npx tsc --noEmit
+
+      - name: ビルドテスト
+        run: npm run build
+        env:
+          # テスト用のダミー環境変数
+          GITHUB_TOKEN: dummy
+          SLACK_BOT_TOKEN: dummy
+          NEXT_PUBLIC_APP_NAME: Test
+          NEXT_PUBLIC_APP_VERSION: test
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:3000/api
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ビルド
+        run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          NEXT_PUBLIC_APP_NAME: ${{ vars.NEXT_PUBLIC_APP_NAME || 'PengPeng Daily Report 2.0' }}
+          NEXT_PUBLIC_APP_VERSION: ${{ vars.NEXT_PUBLIC_APP_VERSION || '2.0.0' }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL || 'https://pengpeng-dashboard.vercel.app/api' }}
+
+      - name: Vercelデプロイ
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./
+
+      - name: デプロイ成功通知
+        if: success()
+        run: |
+          echo "✅ デプロイ成功"
+          echo "URL: https://pengpeng-dashboard.vercel.app"
+          echo "バージョン: ${{ vars.NEXT_PUBLIC_APP_VERSION || '2.0.0' }}"
+
+      - name: デプロイ失敗通知
+        if: failure()
+        run: |
+          echo "❌ デプロイ失敗"
+          echo "詳細はGitHub Actionsログを確認してください"
